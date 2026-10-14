@@ -1,0 +1,42 @@
+#!/bin/bash
+set -eu
+
+cd "$(dirname "$0")"
+
+[ -e dots ] || git clone --bare --depth 1 https://codeberg.org/knyz/dots || exit 1
+
+# install guix and the packages/channels
+GUIX_PROFILE="$HOME/.config/guix/current/bin/guix"
+if ! command -v guix >/dev/null 2>&1 && [ ! -x "$GUIX_PROFILE" ]; then
+    tmpdir=$(mktemp -d)
+    trap 'rm -rf "$tmpdir"' 0
+    wget -O "$tmpdir/guix-install.sh" https://guix.gnu.org/guix-install.sh
+    printf "Downloaded the Guix installer.\n"
+    sudo bash "$tmpdir/guix-install.sh"
+fi
+GUIX=$GUIX_PROFILE
+[ -x "$GUIX" ] || GUIX=$(command -v guix)
+"$GUIX" pull --channels=channels.scm
+"$GUIX_PROFILE" package --manifest=manifest.scm
+
+# my preferred dir setup, doesn't make d/ a symlink or tmpfs though
+for d in Downloads Documents Videos Pictures; do
+    if [ -d "$HOME/$d" ] && [ -n "$(find "$HOME/$d" -mindepth 1 -maxdepth 1 -print -quit)" ]; then
+        printf "Error: ~/$(basename "$d") is not empty; refusing to remove it.\n" >&2
+        exit 1
+    fi
+done
+printf '%s\n' "This will remove empty standard XDG dirs and create a,b,d,k,m,r,s,w,x,z. Continue? [y/N]"
+IFS= read -r answer
+case "$answer" in y|Y|yes|YES) ;; *) printf "Aborted.\n"; exit 1 ;; esac
+rmdir "$HOME"/{Downloads,Documents,Videos,Pictures,Templates,Desktop,Music,Public} 2>/dev/null || :
+mkdir -p "$HOME"/{a,b,d,k,m,r,s,w,x,z}
+
+# install dots
+DOTS="$HOME/.sober/dots"
+[ -d "$DOTS" ] || { printf "Missing dotfiles repository: $DOTS\n" >&2; exit 1; }
+dots() { git --git-dir="$DOTS" --work-tree="$HOME" "$@"; }
+dots checkout
+
+
+printf "Sober has (hopefully) installed.\n"
